@@ -1,0 +1,9 @@
+classes= 80
+train  = /home/pjreddie/data/coco/trainvalno5k.txt
+valid  = coco_testdev
+#valid = data/coco_val_5k.list
+#names = data/coco.names
+names = /home/group17/DLAV-2022/projects/loomo/darknet/data/coco.names
+backup = /home/pjreddie/backup/
+eval=coco
+
