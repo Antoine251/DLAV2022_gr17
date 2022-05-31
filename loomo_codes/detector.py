@@ -44,22 +44,18 @@ bf = cv2.BFMatcher()
 person_detected_before = None
 init = 0
 debug = False
+lossTimerStart = 0
 
 def Detector(image):
-    # convert image to a numpy array
-    image = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
-    if debug: cv2.imshow('Test window', image)
+  # convert image to a numpy array
+  image = cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)
+  if debug: cv2.imshow('Test window', image)
 
-    # ch1 = image[:,:,0].copy()
-    # ch3 = image[:,:,2].copy()
-    # image[:,:,0] = ch3
-    # image[:,:,2] = ch1
-
-    return imageProcess(image)
+  return imageProcess(image)
 
 #Function performing person detection and tracking
 def imageProcess(frame):
-    global width, height, doMatches, bf, person_detected_before, init
+    global width, height, doMatches, bf, person_detected_before, init, lossTimerStart
     if debug: print("doMatches: ", doMatches, "init: ", init)
     detections, width_ratio, height_ratio = darknet_helper(frame, width, height)
   
@@ -106,29 +102,40 @@ def imageProcess(frame):
             person_detected_before = cropped_frame.copy()
             doMatches = 1
             if debug: print('Person Detected!')
+            print('Person Detected!')
           
         else:           #-------TRACKING--------
           init = 1 #initialization was done
           person_detected_before_gray = cv2.cvtColor(person_detected_before, cv2.COLOR_RGB2GRAY)
           cropped_frame_gray =  cv2.cvtColor(cropped_frame, cv2.COLOR_RGB2GRAY)
 
-          feature_extractor = cv2.xfeatures2d.SIFT_create() 
+          #feature_extractor = cv2.xfeatures2d.SIFT_create() 
+          feature_extractor = cv2.SIFT_create()
 
           # find the keypoints and descriptors with chosen feature_extractor
           kp_l, desc_l = feature_extractor.detectAndCompute(person_detected_before_gray, None)
           kp_r, desc_r = feature_extractor.detectAndCompute(cropped_frame_gray, None)
-
-          matches = bf.knnMatch(desc_l, desc_r, k=2)  #compute matches between person detected and reference image 
-
+          
+          if desc_r is not None and desc_l is not None:
+            #print(len(desc_r),len(desc_r))
+            matches = bf.knnMatch(desc_l, desc_r, k=2)  #compute matches between person detected and reference image 
+            
+            if np.shape(matches)[1] == 2:
+              good_matches = []
+              for m,n in matches:
+                if m.distance < 0.9*n.distance:
+                    good_matches.append([m])
+            else:
+              good_matches = []
+          else:
+            good_matches = []
           # Apply a filter to select the best matches only
-          good_matches = []
-          for m,n in matches:
-            if m.distance < 0.7*n.distance:
-                good_matches.append([m])
+          
 
           #if the person detected has more than 15 matches in common with the reference person 
           #then store the frame, the number of matches and the bounding box
-          if len(good_matches) > 15:
+          if len(good_matches) > 5:
+            print("good matches ", len(good_matches))
             list_person.append([left, top, right, bottom, confidence])
             nbrMatches.append(len(good_matches))
             frame_cropped.append(cropped_frame)
@@ -138,6 +145,7 @@ def imageProcess(frame):
         #If only one person is detected, its bounding box become the reference frame 
         if len(list_person) == 1:
           person_detected_before = frame_cropped[0].copy()
+          print(np.shape(person_detected_before))
 
         #If several persons had more than 15 matches in common with reference frame,
         #diplay green bounding box around the person that have the more matches 
@@ -146,12 +154,29 @@ def imageProcess(frame):
           good_person = np.argmax(nbrMatches)
           bbox_coord = list_person[good_person]
           bbox_label = 1  #'Person' 
+          lossTimerStart = 0
         else:   
             bbox_coord = [0,0,0,0,0]
             bbox_label = 0  #'No person'
+            if lossTimerStart == 0:
+              lossTimerStart = time.time()
+
+            print(time.time() - lossTimerStart)
+            print(lossTimerStart)
+            if time.time() - lossTimerStart > 5:
+              print("Person lost !!  Initializing restart")
+              doMatches = 0
+              init = 0
+              lossTimerStart = 0
+              person_detected_before = None
+
+        
+        
     else:
         bbox_coord = [0,0,0,0,0]
         bbox_label = 0  #'No person'
+    
+
     
 
     center_x = (bbox_coord[0] + bbox_coord[2])/2
